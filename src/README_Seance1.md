@@ -82,14 +82,3 @@ The shell displays a welcome message and a simple prompt (`enseash % `). At this
 5. **Error management**: fork failures are reported via `perror()`; command execution failures are reported in the child.
 
 ---
-
-## General architecture
-The shell follows a modular architecture:
-1. **Display layer**: manages the prompt and messages.
-2. **Execution layer**: `fork()` / `exec()` / `wait()` for commands.
-3. **State layer**: tracks the status of previous commands.
-4. **Error layer**: handles and reports failures in read, fork, or exec.
-5. **Main loop**: orchestrates the REPL cycle.
-
----
-
