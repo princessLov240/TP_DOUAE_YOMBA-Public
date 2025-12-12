@@ -91,7 +91,8 @@ void execute_command(const char *command, int *exit_code, int *signal_num) {
 int main() {
     char buffer[BUFFER_SIZE];
     ssize_t bytes_read;
-    int last_exit_code = -1;
+    // Variables to store last command's exit code and signal
+    int last_exit_code = -1; 
     int last_signal = -1;
 
     write(STDOUT_FILENO, WELCOME_MSG, strlen(WELCOME_MSG));
