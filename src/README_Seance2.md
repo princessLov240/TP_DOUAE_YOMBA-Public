@@ -1,1 +1,70 @@
-ENSEA Shell - Part 2: Advanced FeaturesIntroductionThis second session focused on enhancing the enseash shell with performance monitoring, complex command parsing, and advanced I/O management through redirections and pipes.Question 5: Execution time measurementGoal: Measure the precise execution time of each command and display it in the prompt.System concepts usedTime management: clock_gettime() with CLOCK_MONOTONIC.Data structures: struct timespec to store results in seconds (tv_sec) and nanoseconds (tv_nsec).Feature macros: #define _POSIX_C_SOURCE 199309L to access POSIX timers.Implementation logicStart timestamp: Recorded in the parent process just before fork().End timestamp: Recorded immediately after waitpid() returns.Duration calculation: We calculate the difference between the two timestamps and convert it into milliseconds:$$(end.tv\_sec - start.tv\_sec) \times 1000 + (end.tv\_nsec - start.tv\_nsec) / 1,000,000$$Display: The prompt is dynamically updated to show the time alongside the exit status: enseash [exit:0|10ms] %.Question 6: Execution of complex commands (with arguments)Goal: Enable the shell to handle commands with multiple arguments.System concepts usedTokenization: strtok() to split the user input string.Execution: execvp() to execute a command using an array of arguments and the system PATH.Implementation logicParsing: The parse_command() function iterates through the input string, replacing spaces with \0 and storing the starting address of each word in a char *argv[] array.Termination: The argument array is terminated with a NULL pointer to comply with the execvp signature.Execution: Instead of execlp, we use execvp(argv[0], argv) to pass the entire list of arguments to the system.Question 7: Redirection with '<' and '>'Goal: Implement standard input and output redirections to files.System concepts usedFile descriptors: open() with specific flags like O_RDONLY, O_WRONLY, O_CREAT, and O_TRUNC.Descriptor duplication: dup2() to replace standard streams with file streams.Implementation logicScanning: The handle_redirections() function scans the argv array for redirection symbols.Output redirection (>): Opens the target file (creating it if necessary with permissions 0644) and uses dup2 to redirect STDOUT_FILENO.Input redirection (<): Opens the file in read-only mode and uses dup2 to redirect STDIN_FILENO.Array Cleanup: The symbols and filenames are removed from argv before execution so the final command (like ls) doesn't see them as its own arguments.Question 8: Management of pipe redirection ('|')Goal: Connect the output of one command to the input of another using a pipe.System concepts usedIPC: pipe() to create a communication channel between processes.Synchronization: Orchestrating multiple fork() calls and managing file descriptor closures.Implementation logicDetection: The command string is searched for the | character. If found, the string is split into two separate commands.Pipe Creation: An array of two file descriptors is created via pipe(fd).First child: Redirects its standard output to the write-end of the pipe (fd[1]) and executes the first command.Second child: Redirects its standard input to the read-end of the pipe (fd[0]) and executes the second command.Closure: The parent must close both ends of the pipe and wait for the children to finish to avoid deadlocks.
+# ENSEA Shell - Part 2: Advanced Features
+
+## Introduction
+This second session focused on enhancing the enseash shell with performance monitoring, complex command parsing, and advanced I/O management through redirections and pipes.
+
+---
+
+## Question 5: Execution time measurement
+
+**Goal:** Measure the precise execution time of each command and display it in the prompt.
+
+### System concepts used
+* **Time management:** `clock_gettime()` with `CLOCK_MONOTONIC`.
+* **Data structures:** `struct timespec` to store results in seconds (`tv_sec`) and nanoseconds (`tv_nsec`).
+* **Feature macros:** `#define _POSIX_C_SOURCE 199309L` to access POSIX timers.
+
+### Implementation logic
+* **Start timestamp:** Recorded in the parent process just before `fork()`.
+* **End timestamp:** Recorded immediately after `waitpid()` returns.
+* **Duration calculation:** We calculate the difference between the two timestamps and convert it into milliseconds:
+$$(end.tv\_sec - start.tv\_sec) \times 1000 + (end.tv\_nsec - start.tv\_nsec) / 1,000,000$$
+* **Display:** The prompt is dynamically updated to show the time alongside the exit status: `enseash [exit:0|10ms] %`.
+
+---
+
+## Question 6: Execution of complex commands (with arguments)
+
+**Goal:** Enable the shell to handle commands with multiple arguments (e.g., `ls -l`).
+
+### System concepts used
+* **Tokenization:** `strtok()` to split the user input string into tokens.
+* **Execution:** `execvp()` to execute a command using an array of arguments and the system `PATH`.
+
+### Implementation logic
+* **Parsing:** The `parse_command()` function iterates through the input string, replacing spaces with `\0` and storing the starting address of each word in a `char *argv[]` array.
+* **Termination:** The argument array is terminated with a `NULL` pointer to comply with the `execvp` signature.
+* **Execution:** Instead of `execlp`, we use `execvp(argv[0], argv)` to pass the entire list of arguments to the system.
+
+---
+
+## Question 7: Redirection with '<' and '>'
+
+**Goal:** Implement standard input and output redirections to files.
+
+### System concepts used
+* **File descriptors:** `open()` with specific flags like `O_RDONLY`, `O_WRONLY`, `O_CREAT`, and `O_TRUNC`.
+* **Descriptor duplication:** `dup2()` to replace standard streams with file streams.
+
+### Implementation logic
+* **Scanning:** The `handle_redirections()` function scans the `argv` array for redirection symbols.
+* **Output redirection (>)**: Opens the target file (creating it if necessary with permissions `0644`) and uses `dup2` to redirect `STDOUT_FILENO`.
+* **Input redirection (<)**: Opens the file in read-only mode and uses `dup2` to redirect `STDIN_FILENO`.
+* **Array Cleanup:** The symbols and filenames are removed from `argv` before execution so the command only receives its relevant arguments.
+
+---
+
+## Question 8: Management of pipe redirection ('|')
+
+**Goal:** Connect the output of one command to the input of another using a pipe.
+
+### System concepts used
+* **IPC:** `pipe()` to create a communication channel between processes.
+* **Synchronization:** Orchestrating multiple `fork()` calls and managing file descriptor closures to avoid deadlocks.
+
+### Implementation logic
+* **Detection:** The command string is searched for the `|` character. If found, the string is split into two separate commands.
+* **Pipe Creation:** An array of two file descriptors is created via `pipe(fd)`.
+* **First child:** Redirects its standard output to the write-end of the pipe (`fd[1]`) and executes the first command.
+* **Second child:** Redirects its standard input to the read-end of the pipe (`fd[0]`) and executes the second command.
+* **Closure:** The parent must close both ends of the pipe and wait for the children to finish to ensure proper execution.
