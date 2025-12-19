@@ -1,70 +1,139 @@
-# ENSEA Shell - Part 2: Advanced Features
+# ENSEA Shell – Part 2: Advanced Execution Features
 
 ## Introduction
-This second session focused on enhancing the enseash shell with performance monitoring, complex command parsing, and advanced I/O management through redirections and pipes.
+This document describes the second development session of the `enseash` mini-shell.
+During this session, the shell was extended to support execution time measurement,
+commands with arguments, input/output redirections, and pipe handling.
 
 ---
 
-## Question 5: Execution time measurement
-
-**Goal:** Measure the precise execution time of each command and display it in the prompt.
+## Question 5: Measuring command execution time
+**Goal**: Measure and display the execution time of each command using `clock_gettime`.
 
 ### System concepts used
-* **Time management:** `clock_gettime()` with `CLOCK_MONOTONIC`.
-* **Data structures:** `struct timespec` to store results in seconds (`tv_sec`) and nanoseconds (`tv_nsec`).
-* **Feature macros:** `#define _POSIX_C_SOURCE 199309L` to access POSIX timers.
+- **High-resolution timers**: `clock_gettime()` with `CLOCK_MONOTONIC`
+- **Time structures**: `struct timespec`
+- **Process control**: `fork()`, `waitpid()`
+- **Status analysis**:
+  - `WIFEXITED()`, `WEXITSTATUS()`
+  - `WIFSIGNALED()`, `WTERMSIG()`
 
 ### Implementation logic
-* **Start timestamp:** Recorded in the parent process just before `fork()`.
-* **End timestamp:** Recorded immediately after `waitpid()` returns.
-* **Duration calculation:** We calculate the difference between the two timestamps and convert it into milliseconds:
-$$(end.tv\_sec - start.tv\_sec) \times 1000 + (end.tv\_nsec - start.tv\_nsec) / 1,000,000$$
-* **Display:** The prompt is dynamically updated to show the time alongside the exit status: `enseash [exit:0|10ms] %`.
+1. **Start time measurement**:
+   - The timestamp is recorded just before calling `fork()` using `clock_gettime`.
+2. **Command execution**:
+   - A child process executes the command using `execlp()`.
+   - The parent process waits for the child to terminate using `waitpid()`.
+3. **End time measurement**:
+   - The timestamp is recorded immediately after the child finishes.
+4. **Duration computation**:
+   - The execution time is computed in milliseconds:
+     ```
+     duration_ms =
+       (end.tv_sec - start.tv_sec) * 1000 +
+       (end.tv_nsec - start.tv_nsec) / 1000000;
+     ```
+5. **Prompt display**:
+   - The execution time is displayed alongside the exit code or signal:
+     ```
+     enseash [exit:0|10ms] %
+     enseash [sign:9|5ms] %
+     ```
 
 ---
 
-## Question 6: Execution of complex commands (with arguments)
-
-**Goal:** Enable the shell to handle commands with multiple arguments (e.g., `ls -l`).
+## Question 6: Executing commands with arguments
+**Goal**: Support complex commands containing arguments (e.g. `hostname -i`).
 
 ### System concepts used
-* **Tokenization:** `strtok()` to split the user input string into tokens.
-* **Execution:** `execvp()` to execute a command using an array of arguments and the system `PATH`.
+- **Argument vectors**: `argv[]`
+- **Command parsing**: `strtok()`
+- **Process execution**: `execvp()`
 
 ### Implementation logic
-* **Parsing:** The `parse_command()` function iterates through the input string, replacing spaces with `\0` and storing the starting address of each word in a `char *argv[]` array.
-* **Termination:** The argument array is terminated with a `NULL` pointer to comply with the `execvp` signature.
-* **Execution:** Instead of `execlp`, we use `execvp(argv[0], argv)` to pass the entire list of arguments to the system.
+1. **Command parsing**:
+   - The input string is split into tokens using spaces as separators.
+   - Tokens are stored in an `argv[]` array.
+2. **Execution**:
+   - `execvp()` is used instead of `execlp()` to support arguments.
+3. **Process handling**:
+   - The shell still relies on `fork()` and `waitpid()` for execution control.
+4. **Compatibility**:
+   - Simple commands without arguments continue to work normally.
 
 ---
 
-## Question 7: Redirection with '<' and '>'
-
-**Goal:** Implement standard input and output redirections to files.
+## Question 7: Input and output redirections (`<` and `>`)
+**Goal**: Redirect standard input and output to or from files.
 
 ### System concepts used
-* **File descriptors:** `open()` with specific flags like `O_RDONLY`, `O_WRONLY`, `O_CREAT`, and `O_TRUNC`.
-* **Descriptor duplication:** `dup2()` to replace standard streams with file streams.
+- **File operations**: `open()`, `close()`
+- **File descriptor duplication**: `dup2()`
+- **Redirection operators**: `<`, `>`
+- **File permissions**: `0644`
 
 ### Implementation logic
-* **Scanning:** The `handle_redirections()` function scans the `argv` array for redirection symbols.
-* **Output redirection (>)**: Opens the target file (creating it if necessary with permissions `0644`) and uses `dup2` to redirect `STDOUT_FILENO`.
-* **Input redirection (<)**: Opens the file in read-only mode and uses `dup2` to redirect `STDIN_FILENO`.
-* **Array Cleanup:** The symbols and filenames are removed from `argv` before execution so the command only receives its relevant arguments.
+1. **Redirection detection**:
+   - The argument list is scanned for `<` and `>` symbols.
+2. **Input redirection (`<`)**:
+   - The specified file is opened in read-only mode.
+   - `dup2()` redirects `STDIN_FILENO` to the file descriptor.
+3. **Output redirection (`>`)**:
+   - The file is opened (created if necessary, truncated if it exists).
+   - `dup2()` redirects `STDOUT_FILENO` to the file descriptor.
+4. **Argument cleanup**:
+   - Redirection symbols and filenames are removed from `argv[]`.
+5. **Execution context**:
+   - Redirections are handled in the child process before calling `execvp()`.
+
+Example:
+enseash % ls > filelist.txt
+enseash % wc -l < filelist.txt
 
 ---
 
-## Question 8: Management of pipe redirection ('|')
-
-**Goal:** Connect the output of one command to the input of another using a pipe.
+## Question 8: Pipe handling (`|`)
+**Goal**: Implement inter-process communication using pipes.
 
 ### System concepts used
-* **IPC:** `pipe()` to create a communication channel between processes.
-* **Synchronization:** Orchestrating multiple `fork()` calls and managing file descriptor closures to avoid deadlocks.
+- **Anonymous pipes**: `pipe()`
+- **Inter-process communication**
+- **Multiple processes**: two child processes
+- **File descriptor redirection**: `dup2()`
 
 ### Implementation logic
-* **Detection:** The command string is searched for the `|` character. If found, the string is split into two separate commands.
-* **Pipe Creation:** An array of two file descriptors is created via `pipe(fd)`.
-* **First child:** Redirects its standard output to the write-end of the pipe (`fd[1]`) and executes the first command.
-* **Second child:** Redirects its standard input to the read-end of the pipe (`fd[0]`) and executes the second command.
-* **Closure:** The parent must close both ends of the pipe and wait for the children to finish to ensure proper execution.
+1. **Pipe detection**:
+   - The command line is searched for the `|` symbol.
+2. **Command splitting**:
+   - The input is divided into two commands: `cmd1 | cmd2`.
+3. **Pipe creation**:
+   - `pipe(fd)` creates two file descriptors:
+     - `fd[0]`: read end
+     - `fd[1]`: write end
+4. **First child process**:
+   - Redirects `STDOUT_FILENO` to `fd[1]`.
+   - Executes the first command.
+5. **Second child process**:
+   - Redirects `STDIN_FILENO` to `fd[0]`.
+   - Executes the second command.
+6. **Parent process**:
+   - Closes unused file descriptors.
+   - Waits for both children to terminate.
+7. **Execution time measurement**:
+   - The global execution time includes both commands.
+
+Example:
+enseash % ls | wc -l
+
+---
+
+## Conclusion
+During this second session, the `enseash` shell was significantly enhanced.
+It now supports:
+- Execution time measurement
+- Commands with arguments
+- Input and output redirections
+- Pipe-based command chaining
+
+These features bring the shell closer to the behavior of a real UNIX shell
+and provide a deeper understanding of process management and file descriptor handling.
